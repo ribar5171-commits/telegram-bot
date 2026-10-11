@@ -12,13 +12,12 @@ from telegram.ext import (
 from telegram.request import HTTPXRequest
 from telegram.error import BadRequest
 
-# ================== تنظیمات از Environment Variables ==================
+# ================== تنظیمات ==================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
 DELETE_AFTER = 41
 
-# ================== پارس کردن ورودی ==================
 def parse_ids(text: str):
     text = text.strip()
 
@@ -40,7 +39,6 @@ def parse_ids(text: str):
 
     return None, None
 
-# ================== دستور اد فایل ==================
 async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_ID:
         await update.message.reply_text("شما دسترسی ندارید.")
@@ -51,10 +49,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if not match:
         await update.message.reply_text(
-            "مثال‌ها:\n"
-            "`اد فایل 55`\n"
-            "`اد فایل 10 تا 20`\n"
-            "`اد فایل 26 با 90`",
+            "مثال‌ها:\n`اد فایل 55`\n`اد فایل 10 تا 20`\n`اد فایل 26 با 90`",
             parse_mode="Markdown"
         )
         return
@@ -85,7 +80,6 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# ================== وقتی کاربر روی لینک کلیک می‌کنه ==================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     args = context.args
     if not args:
@@ -120,54 +114,35 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 message_id=msg_id
             )
             sent_messages.append(sent.message_id)
-        except BadRequest:
+        except Exception:
             continue
-        except Exception as e:
-            print(f"Error: {e}")
 
     if not sent_messages:
-        await update.message.reply_text("هیچ فایلی پیدا نشد یا ربات به کانال دسترسی ندارد.")
+        await update.message.reply_text("هیچ فایلی پیدا نشد.")
         return
 
     context.job_queue.run_once(
         delete_messages,
         when=DELETE_AFTER,
-        data={"chat_id": chat_id, "message_ids": sent_messages},
-        name=f"delete_{chat_id}_{payload}"
+        data={"chat_id": chat_id, "message_ids": sent_messages}
     )
 
 async def delete_messages(context: ContextTypes.DEFAULT_TYPE):
     job_data = context.job.data
     for msg_id in job_data["message_ids"]:
         try:
-            await context.bot.delete_message(
-                chat_id=job_data["chat_id"],
-                message_id=msg_id
-            )
+            await context.bot.delete_message(chat_id=job_data["chat_id"], message_id=msg_id)
         except Exception:
             pass
 
-# ================== اجرا ==================
 def main():
-    # رفع مشکل event loop در پایتون جدید
-    try:
-        asyncio.get_event_loop()
-    except RuntimeError:
-        asyncio.set_event_loop(asyncio.new_event_loop())
+    # رفع قطعی مشکل event loop
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
-    request = HTTPXRequest(
-        connect_timeout=30.0,
-        read_timeout=30.0,
-        write_timeout=30.0,
-        pool_timeout=30.0,
-    )
+    request = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0, write_timeout=30.0)
 
-    app = (
-        Application.builder()
-        .token(BOT_TOKEN)
-        .request(request)
-        .build()
-    )
+    app = Application.builder().token(BOT_TOKEN).request(request).build()
 
     app.add_handler(CommandHandler("add", add_command))
     app.add_handler(MessageHandler(filters.Regex(r"(?i)(اد فایل|اضافه فایل)"), add_command))
