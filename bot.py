@@ -1,4 +1,6 @@
+import os
 import re
+import asyncio
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -10,23 +12,16 @@ from telegram.ext import (
 from telegram.request import HTTPXRequest
 from telegram.error import BadRequest
 
-# ================== تنظیمات ==================
-BOT_TOKEN = "8818119724:AAE-bn4CwB0rDFLT6BgrV2XChjKZTFYCf8w"
-ADMIN_ID = 7643512049
-CHANNEL_ID = -1004460564934
+# ================== تنظیمات از Environment Variables ==================
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+CHANNEL_ID = int(os.getenv("CHANNEL_ID", "0"))
 DELETE_AFTER = 41
 
 # ================== پارس کردن ورودی ==================
 def parse_ids(text: str):
-    """
-    پشتیبانی از سه حالت:
-    1. تک عدد: 26
-    2. رنج: 10 تا 20   یا  10-20
-    3. لیست با «با»: 26 با 90 با 105
-    """
     text = text.strip()
 
-    # حالت رنج
     range_match = re.match(r"^(\d+)\s*(?:تا|-)\s*(\d+)$", text)
     if range_match:
         start = int(range_match.group(1))
@@ -35,13 +30,11 @@ def parse_ids(text: str):
             start, end = end, start
         return list(range(start, end + 1)), "range"
 
-    # حالت لیست با «با»
     if "با" in text:
         numbers = re.findall(r"\d+", text)
         if numbers:
             return [int(n) for n in numbers], "list"
 
-    # حالت تک عدد
     if text.isdigit():
         return [int(text)], "single"
 
@@ -61,8 +54,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "مثال‌ها:\n"
             "`اد فایل 55`\n"
             "`اد فایل 10 تا 20`\n"
-            "`اد فایل 26 با 90`\n"
-            "`اد فایل 26 با 90 با 105`",
+            "`اد فایل 26 با 90`",
             parse_mode="Markdown"
         )
         return
@@ -71,7 +63,7 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ids, mode = parse_ids(payload)
 
     if not ids:
-        await update.message.reply_text("فرمت اشتباهه. مثال‌ها رو دوباره ببین.")
+        await update.message.reply_text("فرمت اشتباهه.")
         return
 
     bot_username = (await context.bot.get_me()).username
@@ -82,16 +74,14 @@ async def add_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif mode == "list":
         link_payload = "_".join(str(i) for i in ids)
         desc = " + ".join(f"**{i}**" for i in ids)
-    else:  # single
+    else:
         link_payload = str(ids[0])
         desc = f"پیام شماره **{ids[0]}**"
 
     link = f"https://t.me/{bot_username}?start={link_payload}"
 
     await update.message.reply_text(
-        f"✅ لینک ساخته شد\n\n"
-        f"{desc}\n\n"
-        f"🔗 لینک:\n`{link}`",
+        f"✅ لینک ساخته شد\n\n{desc}\n\n🔗 لینک:\n`{link}`",
         parse_mode="Markdown"
     )
 
@@ -106,27 +96,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     message_ids = []
 
-    # رنج (با -)
     if "-" in payload and payload.replace("-", "").isdigit():
         parts = payload.split("-")
         start, end = int(parts[0]), int(parts[1])
         if start > end:
             start, end = end, start
         message_ids = list(range(start, end + 1))
-
-    # لیست (با _)
     elif "_" in payload:
         message_ids = [int(x) for x in payload.split("_") if x.isdigit()]
-
-    # تک عدد
     elif payload.isdigit():
         message_ids = [int(payload)]
-
     else:
-        await update.message.reply_text("لینک نامعتبر است.")
-        return
-
-    if not message_ids:
         await update.message.reply_text("لینک نامعتبر است.")
         return
 
@@ -143,13 +123,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except BadRequest:
             continue
         except Exception as e:
-            print(f"Error copying {msg_id}: {e}")
+            print(f"Error: {e}")
 
     if not sent_messages:
         await update.message.reply_text("هیچ فایلی پیدا نشد یا ربات به کانال دسترسی ندارد.")
         return
 
-    # پاک کردن بعد از ۴۱ ثانیه
     context.job_queue.run_once(
         delete_messages,
         when=DELETE_AFTER,
@@ -170,6 +149,12 @@ async def delete_messages(context: ContextTypes.DEFAULT_TYPE):
 
 # ================== اجرا ==================
 def main():
+    # رفع مشکل event loop در پایتون جدید
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
     request = HTTPXRequest(
         connect_timeout=30.0,
         read_timeout=30.0,
